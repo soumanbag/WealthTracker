@@ -223,6 +223,7 @@
     border-radius: var(--r-sm); padding: 12px 14px; color: var(--white);
     font-size: 15px; outline: none; transition: border-color 0.2s;
     -webkit-appearance: none;
+    appearance: none;
   }
   .form-input:focus, .form-select:focus { border-color: var(--green); }
   .form-select option { background: var(--card); }
@@ -962,76 +963,89 @@ function selectExchange(exch, silent) {
 }
 
 // ── STOCK SEARCH (BSE / NSE) ────────────────────────────────────────────
-const AORI2 = url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
 
 async function searchBSE(query) {
-  // BSE search API
-  const url = `https://api.bseindia.com/BseIndiaAPI/api/ComHeader/w?quotetype=EQ&scripcode=${encodeURIComponent(query)}&seriesid=`;
-  // Also try the search endpoint for name queries
-  const searchUrl = `https://api.bseindia.com/BseIndiaAPI/api/MktWatch/w?Type=SI&Sectortype=0&grptype=LARGE&SubSector=&industry=0&Scrip_Code=${encodeURIComponent(query)}`;
-
-  // For numeric queries (scrip codes), fetch directly
   if (/^\d+$/.test(query.trim())) {
-    return await fetchBSEByCode(query.trim());
+    const r = await fetchBSEByCode(query.trim());
+    return r ? [r] : [];
   }
-
-  // For name queries, use BSE autocomplete
-  const acUrl = `https://api.bseindia.com/BseIndiaAPI/api/GetSmartSearchList/w?strSearch=${encodeURIComponent(query)}`;
-  try {
-    const r = await fetch(AORI2(acUrl), { signal: AbortSignal.timeout(6000) });
-    if (!r.ok) return [];
-    const w = await r.json();
-    const data = JSON.parse(w.contents);
-    const arr = data?.Table || data?.table || [];
-    return arr.slice(0, 8).map(item => ({
-      name:    item.LONGNAME  || item.scrip_name || item.SCRIP_NAME || item.CompanyName,
-      code:    item.SCRIP_CD  || item.scripcode  || item.Scripcode,
-      ticker:  `BSE:${item.SCRIP_CD || item.scripcode}`,
-      price:   parseFloat(item.CurrRate || item.PRICE || 0) || null,
-      sector:  item.Sector || item.INDUSTRY || '',
-    })).filter(x => x.name && x.code);
-  } catch { return []; }
+  const data = await proxyFetch(
+    `https://api.bseindia.com/BseIndiaAPI/api/GetSmartSearchList/w?strSearch=${encodeURIComponent(query)}`, 6000
+  );
+  if (!data) return [];
+  const arr = data?.Table || data?.table || [];
+  return arr.slice(0, 8).map(item => ({
+    name:   item.LONGNAME || item.scrip_name || item.SCRIP_NAME || item.CompanyName,
+    code:   item.SCRIP_CD || item.scripcode  || item.Scripcode,
+    ticker: `BSE:${item.SCRIP_CD || item.scripcode}`,
+    price:  parseBSEPrice(item),
+    sector: item.Sector || item.INDUSTRY || '',
+  })).filter(x => x.name && x.code);
 }
 
 async function fetchBSEByCode(code) {
-  const url = `https://api.bseindia.com/BseIndiaAPI/api/getScripHeaderData/w?Debtflag=&scripcode=${code}&seriesid=`;
-  try {
-    const r = await fetch(AORI2(url), { signal: AbortSignal.timeout(7000) });
-    if (!r.ok) return null;
-    const w = await r.json();
-    const d = JSON.parse(w.contents);
-    const price = parseFloat(d?.CurrRate || d?.Currrate || 0);
-    const name  = d?.CompanyName || d?.LONGNAME || d?.scrip_name || code;
-    if (!name || name === code) return null;
-    return {
-      name, code,
-      ticker: `BSE:${code}`,
-      price:  price || null,
-      high:   parseFloat(d?.High52 || 0),
-      low:    parseFloat(d?.Low52  || 0),
-      pe:     parseFloat(d?.PE     || 0),
-      sector: d?.IndustryName || '',
-    };
-  } catch { return null; }
+  const endpoints = [
+    `https://api.bseindia.com/BseIndiaAPI/api/getScripHeaderData/w?Debtflag=&scripcode=${code}&seriesid=`,
+    `https://api.bseindia.com/BseIndiaAPI/api/ComHeader/w?quotetype=EQ&scripcode=${code}&seriesid=`,
+  ];
+
+  let bestResult = null;
+  for (const ep of endpoints) {
+    const data = await proxyFetch(ep, 7000);
+    if (!data) continue;
+    const price = parseBSEPrice(data);
+    const name  = data?.CompanyName || data?.LONGNAME || data?.scrip_name || data?.ScripName;
+    if (name && price) {
+      return {
+        name, code,
+        ticker: `BSE:${code}`,
+        price,
+        high:   parseFloat(data?.High52 || data?.FiftyTwoWeekHigh || 0) || null,
+        low:    parseFloat(data?.Low52  || data?.FiftyTwoWeekLow  || 0) || null,
+        pe:     parseFloat(data?.PE     || data?.PERatio          || 0) || null,
+        sector: data?.IndustryName || data?.Industry || data?.Sector || '',
+      };
+    }
+    if (!bestResult && name) bestResult = { name, code, ticker: `BSE:${code}`, price: null, sector: data?.IndustryName || '' };
+  }
+
+  // Got a name but no price — try Groww
+  if (bestResult) {
+    bestResult.price = await fetchGroww(code, null);
+    return bestResult;
+  }
+  return null;
 }
 
 async function searchNSE(query) {
-  // NSE search
-  const url = `https://www.nseindia.com/api/search/autocomplete?q=${encodeURIComponent(query)}`;
-  try {
-    const r = await fetch(AORI2(url), { signal: AbortSignal.timeout(6000) });
-    if (!r.ok) return [];
-    const w = await r.json();
-    const data = JSON.parse(w.contents);
-    const arr = data?.symbols || [];
-    return arr.slice(0, 8).map(item => ({
-      name:   item.symbol_info || item.symbol,
-      code:   item.symbol,
-      ticker: `NSE:${item.symbol}`,
-      price:  null,
-      sector: item.symbol_type || '',
-    })).filter(x => x.name && x.code);
-  } catch { return []; }
+  // Try Tickertape first — much more reliable than NSE direct API
+  const ttData = await proxyFetch(
+    `https://api.tickertape.in/search?text=${encodeURIComponent(query)}&type=stock`, 6000
+  );
+  if (ttData) {
+    const arr = ttData?.data?.stocks ?? ttData?.stocks ?? (Array.isArray(ttData?.data) ? ttData.data : []);
+    if (Array.isArray(arr) && arr.length) {
+      return arr.slice(0, 8).map(item => ({
+        name:   item.name || item.longName || item.sid,
+        code:   item.sid  || item.symbol,
+        ticker: `NSE:${(item.sid || item.symbol || '').toUpperCase()}`,
+        price:  parseFloat(item.latestPrice || item.price || 0) || null,
+        sector: item.sector || '',
+      })).filter(x => x.name && x.code);
+    }
+  }
+  // Fallback: NSE autocomplete via proxy
+  const nseData = await proxyFetch(
+    `https://www.nseindia.com/api/search/autocomplete?q=${encodeURIComponent(query)}`, 6000
+  );
+  if (!nseData) return [];
+  return (nseData?.symbols || []).slice(0, 8).map(item => ({
+    name:   item.symbol_info || item.symbol,
+    code:   item.symbol,
+    ticker: `NSE:${item.symbol}`,
+    price:  null,
+    sector: item.symbol_type || '',
+  })).filter(x => x.name && x.code);
 }
 
 let searchAbort = null;
@@ -1106,10 +1120,11 @@ async function selectSearchResult(idx) {
   dd.style.display = 'none';
   document.getElementById('stockSearchInput').value = r.name;
 
-  // If price not yet fetched (NSE name search), fetch it now
+  // Fetch live price if not already in search result
   let price = r.price;
   if (!price && r.ticker) {
     document.getElementById('searchSpinner').style.display = '';
+    // Use the smart router — handles NSE via Tickertape, BSE via BSE API
     price = await fetchPrice({ ticker: r.ticker, type: 'stock' });
     document.getElementById('searchSpinner').style.display = 'none';
   }
@@ -1332,70 +1347,110 @@ function deleteHolding() {
 }
 
 // ── LIVE PRICES ────────────────────────────────────────────────────────
-// Strategy:
-//   Indian stocks (type=stock): BSE India API (by scrip code) → NSE India API → Yahoo Finance .BO/.NS fallback
-//   Mutual funds  (type=mf)   : MFAPI (by scheme code) → Yahoo Finance fallback
-//   US stocks     (type=us)   : Yahoo Finance direct → corsproxy fallback
+// Sources in priority order:
+//   Indian stocks: Tickertape → Groww → BSE API → Yahoo .NS/.BO
+//   Mutual funds : MFAPI.in
+//   US stocks    : Yahoo Finance
 
 const CORS = url => `https://corsproxy.io/?${encodeURIComponent(url)}`;
 const AORI = url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
 
-// Parse allorigins wrapper
 function unwrapAori(text) {
   const w = JSON.parse(text);
   return JSON.parse(w.contents);
 }
 
-// ── Source 1: BSE India public API (works for ALL BSE-listed stocks by scrip code)
-// Ticker format for Indian stocks: BSE:<scripCode>  e.g. BSE:513337
+// Fetch URL via direct + 2 proxies, auto-detect and unwrap allorigins
+async function proxyFetch(url, ms = 7000) {
+  const tries = [
+    () => fetch(url,       { signal: AbortSignal.timeout(ms) }),
+    () => fetch(AORI(url), { signal: AbortSignal.timeout(ms) }),
+    () => fetch(CORS(url), { signal: AbortSignal.timeout(ms) }),
+  ];
+  for (const go of tries) {
+    try {
+      const r = await go();
+      if (!r.ok) continue;
+      const text = await r.text();
+      if (!text || text.trim() === '' || text.trim().startsWith('<')) continue;
+      // allorigins wraps: {"contents":"...","status":{...}}
+      if (text.includes('"contents"') && text.includes('"status"')) {
+        try { return unwrapAori(text); } catch {}
+      }
+      return JSON.parse(text);
+    } catch {}
+  }
+  return null;
+}
+
+// Extract price from BSE API response — covers all known field names
+function parseBSEPrice(data) {
+  if (!data) return null;
+  const fields = [
+    data.CurrRate, data.Currrate, data.currRate, data.currentRate,
+    data.LTP, data.ltp, data.LastRate, data.lastRate,
+    data.PRICE, data.Price, data.price, data.CurrentRate, data.PrevClose,
+  ];
+  for (const v of fields) { const n = parseFloat(v); if (n > 0) return n; }
+  return null;
+}
+
+// ── Source 1: Tickertape — works for ALL NSE & BSE stocks by symbol
+async function fetchTickertape(symbol) {
+  const data = await proxyFetch(
+    `https://api.tickertape.in/stocks/quotes?sids=${encodeURIComponent(symbol)}`, 6000
+  );
+  if (!data) return null;
+  const item = Array.isArray(data?.data) ? data.data[0] : (data?.data ?? data);
+  const price = parseFloat(item?.latestPrice ?? item?.price ?? item?.ltp ?? item?.last ?? item?.closePrice);
+  return price > 0 ? price : null;
+}
+
+// ── Source 2: Groww — reliable for NSE & BSE
+async function fetchGroww(scripCode, symbol) {
+  const urls = [];
+  if (symbol)    urls.push(`https://groww.in/v1/api/stocks_data/v1/tr_live_data/exchange/NSE/segment/CASH/${symbol}`);
+  if (scripCode) urls.push(`https://groww.in/v1/api/stocks_data/v1/tr_live_data/exchange/BSE/segment/CASH/${scripCode}`);
+  for (const url of urls) {
+    const data = await proxyFetch(url, 6000);
+    if (!data) continue;
+    const price = parseFloat(data?.ltp ?? data?.LTP ?? data?.lastPrice ?? data?.last_price ?? data?.closePrice);
+    if (price > 0) return price;
+  }
+  return null;
+}
+
+// ── Source 3: BSE India API — best for BSE scrip codes
 async function fetchBSE(scripCode) {
-  const url = `https://api.bseindia.com/BseIndiaAPI/api/getScripHeaderData/w?Debtflag=&scripcode=${scripCode}&seriesid=`;
-  for (const wrap of [url, AORI(url)]) {
-    try {
-      const r = await fetch(wrap, { signal: AbortSignal.timeout(6000) });
-      if (!r.ok) continue;
-      const text = await r.text();
-      const data = wrap === url ? JSON.parse(text) : unwrapAori(text);
-      const price = parseFloat(data?.CurrRate ?? data?.Currrate ?? data?.currentRate);
-      if (price > 0) return price;
-    } catch {}
+  for (const ep of [
+    `https://api.bseindia.com/BseIndiaAPI/api/getScripHeaderData/w?Debtflag=&scripcode=${scripCode}&seriesid=`,
+    `https://api.bseindia.com/BseIndiaAPI/api/ComHeader/w?quotetype=EQ&scripcode=${scripCode}&seriesid=`,
+  ]) {
+    const data = await proxyFetch(ep, 7000);
+    const price = parseBSEPrice(data);
+    if (price) return price;
   }
   return null;
 }
 
-// ── Source 2: NSE India public API (for NSE-listed stocks by symbol)
-// Ticker format: NSE:<symbol>  e.g. NSE:RELIANCE
-async function fetchNSE(symbol) {
-  const url = `https://www.nseindia.com/api/quote-equity?symbol=${encodeURIComponent(symbol)}`;
-  try {
-    const r = await fetch(AORI(url), { signal: AbortSignal.timeout(7000) });
-    if (!r.ok) return null;
-    const data = unwrapAori(await r.text());
-    const price = data?.priceInfo?.lastPrice ?? data?.priceInfo?.closePrice;
-    return price > 0 ? price : null;
-  } catch { return null; }
-}
-
-// ── Source 3: Yahoo Finance v8 chart API (for US stocks + .NS/.BO suffix Indian stocks)
+// ── Source 4: Yahoo Finance v8
 async function fetchYahoo(ticker) {
-  const BASE = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
-  const BASE2 = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
-  for (const url of [BASE, AORI(BASE), CORS(BASE2)]) {
-    try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
-      if (!r.ok) continue;
-      const text = await r.text();
-      const data = url === BASE ? JSON.parse(text) : (url.includes('allorigins') ? unwrapAori(text) : JSON.parse(text));
-      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
-                 ?? data?.chart?.result?.[0]?.meta?.previousClose;
-      if (price > 0) return price;
-    } catch {}
+  for (const base of [
+    `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
+    `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
+  ]) {
+    const data = await proxyFetch(base, 8000);
+    if (!data) continue;
+    const price = parseFloat(
+      data?.chart?.result?.[0]?.meta?.regularMarketPrice ??
+      data?.chart?.result?.[0]?.meta?.previousClose
+    );
+    if (price > 0) return price;
   }
   return null;
 }
 
-// ── Source 4: MFAPI.in — free mutual fund NAV by scheme code
-// Ticker format: MF:<schemeCode>  e.g. MF:120503
+// ── Source 5: MFAPI.in for mutual funds
 async function fetchMFAPI(schemeCode) {
   try {
     const r = await fetch(`https://api.mfapi.in/mf/${schemeCode}/latest`, { signal: AbortSignal.timeout(6000) });
@@ -1406,61 +1461,43 @@ async function fetchMFAPI(schemeCode) {
   } catch { return null; }
 }
 
-// ── SMART ROUTER: picks the right source based on ticker prefix / type
+// ── SMART ROUTER ────────────────────────────────────────────────────────
 async function fetchPrice(h) {
-  const ticker = (h.ticker || '').trim();
+  const ticker = (h.ticker || '').trim().toUpperCase();
   if (!ticker) return null;
 
-  // BSE:<scripCode>  — e.g. BSE:513337
-  if (ticker.startsWith('BSE:')) {
-    const code = ticker.slice(4);
-    return await fetchBSE(code)
-        ?? await fetchYahoo(code + '.BO');
-  }
-
-  // NSE:<symbol>  — e.g. NSE:RELIANCE
   if (ticker.startsWith('NSE:')) {
     const sym = ticker.slice(4);
-    return await fetchNSE(sym)
-        ?? await fetchYahoo(sym + '.NS');
+    return (await fetchTickertape(sym))
+        ?? (await fetchGroww(null, sym))
+        ?? (await fetchYahoo(sym + '.NS'));
   }
-
-  // MF:<schemeCode>  — e.g. MF:120503
+  if (ticker.startsWith('BSE:')) {
+    const code = ticker.slice(4);
+    return (await fetchBSE(code))
+        ?? (await fetchGroww(code, null))
+        ?? (await fetchYahoo(code + '.BO'));
+  }
   if (ticker.startsWith('MF:')) {
-    return await fetchMFAPI(ticker.slice(3))
-        ?? await fetchYahoo(ticker.slice(3));
+    return (await fetchMFAPI(ticker.slice(3)))
+        ?? (await fetchYahoo(ticker.slice(3)));
   }
-
-  // Legacy .NS / .BO suffixes (backward compatible)
-  if (ticker.endsWith('.NS') || ticker.endsWith('.BO')) {
-    // Try BSE/NSE API first for better small-cap coverage
-    if (ticker.endsWith('.BO')) {
-      // Extract likely scrip code if it's a number
-      const possibleCode = ticker.replace('.BO','');
-      if (/^\d+$/.test(possibleCode)) {
-        const p = await fetchBSE(possibleCode);
-        if (p) return p;
-      } else {
-        const p = await fetchNSE(possibleCode);
-        if (p) return p;
-      }
-    }
-    if (ticker.endsWith('.NS')) {
-      const sym = ticker.replace('.NS','');
-      const p = await fetchNSE(sym);
-      if (p) return p;
-    }
-    return await fetchYahoo(ticker);
+  if (ticker.endsWith('.NS')) {
+    const sym = ticker.slice(0, -3);
+    return (await fetchTickertape(sym))
+        ?? (await fetchGroww(null, sym))
+        ?? (await fetchYahoo(ticker));
   }
-
-  // Plain US ticker (no suffix) — straight to Yahoo
-  if (h.type === 'us') {
-    return await fetchYahoo(ticker);
+  if (ticker.endsWith('.BO')) {
+    const code = ticker.slice(0, -3);
+    return /^\d+$/.test(code)
+      ? ((await fetchBSE(code)) ?? (await fetchGroww(code, null)) ?? (await fetchYahoo(ticker)))
+      : ((await fetchTickertape(code)) ?? (await fetchYahoo(ticker)));
   }
-
-  // Unknown format — try Yahoo as last resort
-  return await fetchYahoo(ticker);
+  // US stock or plain symbol
+  return fetchYahoo(ticker);
 }
+
 
 async function syncPrices() {
   const btn = document.getElementById('syncBtn');
