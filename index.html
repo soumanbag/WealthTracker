@@ -522,9 +522,9 @@
     </div>
 
     <div id="tickerGroup" class="form-group">
-      <label class="form-label" id="tickerLabel">Ticker symbol</label>
-      <input class="form-input" id="holdingTicker" placeholder="e.g. RELIANCE.NS" autocomplete="off" style="text-transform:uppercase">
-      <div style="font-size:11px;color:var(--muted);margin-top:4px" id="tickerHint">For NSE: RELIANCE.NS &nbsp;|&nbsp; BSE: RELIANCE.BO &nbsp;|&nbsp; US: AAPL</div>
+      <label class="form-label" id="tickerLabel">Ticker / scrip code</label>
+      <input class="form-input" id="holdingTicker" placeholder="e.g. BSE:513337 or NSE:RELIANCE" autocomplete="off" style="text-transform:uppercase">
+      <div style="font-size:11px;color:var(--muted);margin-top:4px" id="tickerHint">BSE:513337 · NSE:RELIANCE · MF:120503 · or AAPL for US</div>
     </div>
 
     <div class="form-row">
@@ -660,9 +660,13 @@ function onTypeChange() {
   tickerGroup.style.display = t === 'fd' ? 'none' : '';
   cp.style.display = t === 'fd' ? 'none' : '';
 
-  if (t === 'stock') hint.textContent = 'NSE: RELIANCE.NS   |   BSE: RELIANCE.BO';
-  else if (t === 'us') hint.textContent = 'US tickers: AAPL, TSLA, NVDA, AMZN';
-  else if (t === 'mf') { hint.textContent = 'Not required for MF — use name only'; tickerGroup.style.display = 'none'; }
+  if (t === 'stock') hint.innerHTML = `
+    <b style="color:var(--text1)">BSE:</b>513337 &nbsp;·&nbsp;
+    <b style="color:var(--text1)">NSE:</b>RELIANCE &nbsp;·&nbsp;
+    or legacy RELIANCE.NS / 513337.BO
+  `;
+  else if (t === 'us') hint.textContent = 'US tickers: AAPL, TSLA, NVDA, AMZN (no suffix needed)';
+  else if (t === 'mf') { hint.innerHTML = `<b style="color:var(--text1)">MF:</b>120503 &nbsp;·&nbsp; Find scheme code at mfapi.in`; tickerGroup.style.display = ''; }
 
   document.getElementById('nameLabel').textContent =
     t === 'mf' ? 'Fund name' : t === 'fd' ? 'Bank / institution name' : 'Company name';
@@ -717,83 +721,172 @@ function deleteHolding() {
 }
 
 // ── LIVE PRICES ────────────────────────────────────────────────────────
+// Strategy:
+//   Indian stocks (type=stock): BSE India API (by scrip code) → NSE India API → Yahoo Finance .BO/.NS fallback
+//   Mutual funds  (type=mf)   : MFAPI (by scheme code) → Yahoo Finance fallback
+//   US stocks     (type=us)   : Yahoo Finance direct → corsproxy fallback
 
-// Multiple proxy fallbacks — tried in order until one works
-const PROXIES = [
-  ticker => `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
-  ticker => `https://api.allorigins.win/get?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`)}`,
-  ticker => `https://corsproxy.io/?${encodeURIComponent(`https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`)}`,
-];
+const CORS = url => `https://corsproxy.io/?${encodeURIComponent(url)}`;
+const AORI = url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
 
-async function fetchPrice(ticker) {
-  if (!ticker) return null;
+// Parse allorigins wrapper
+function unwrapAori(text) {
+  const w = JSON.parse(text);
+  return JSON.parse(w.contents);
+}
 
-  for (let i = 0; i < PROXIES.length; i++) {
+// ── Source 1: BSE India public API (works for ALL BSE-listed stocks by scrip code)
+// Ticker format for Indian stocks: BSE:<scripCode>  e.g. BSE:513337
+async function fetchBSE(scripCode) {
+  const url = `https://api.bseindia.com/BseIndiaAPI/api/getScripHeaderData/w?Debtflag=&scripcode=${scripCode}&seriesid=`;
+  for (const wrap of [url, AORI(url)]) {
     try {
-      const url = PROXIES[i](ticker);
+      const r = await fetch(wrap, { signal: AbortSignal.timeout(6000) });
+      if (!r.ok) continue;
+      const text = await r.text();
+      const data = wrap === url ? JSON.parse(text) : unwrapAori(text);
+      const price = parseFloat(data?.CurrRate ?? data?.Currrate ?? data?.currentRate);
+      if (price > 0) return price;
+    } catch {}
+  }
+  return null;
+}
+
+// ── Source 2: NSE India public API (for NSE-listed stocks by symbol)
+// Ticker format: NSE:<symbol>  e.g. NSE:RELIANCE
+async function fetchNSE(symbol) {
+  const url = `https://www.nseindia.com/api/quote-equity?symbol=${encodeURIComponent(symbol)}`;
+  try {
+    const r = await fetch(AORI(url), { signal: AbortSignal.timeout(7000) });
+    if (!r.ok) return null;
+    const data = unwrapAori(await r.text());
+    const price = data?.priceInfo?.lastPrice ?? data?.priceInfo?.closePrice;
+    return price > 0 ? price : null;
+  } catch { return null; }
+}
+
+// ── Source 3: Yahoo Finance v8 chart API (for US stocks + .NS/.BO suffix Indian stocks)
+async function fetchYahoo(ticker) {
+  const BASE = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+  const BASE2 = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+  for (const url of [BASE, AORI(BASE), CORS(BASE2)]) {
+    try {
       const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
       if (!r.ok) continue;
-
-      let data;
       const text = await r.text();
-
-      // allorigins wraps in { contents: "..." }
-      if (i === 1) {
-        const wrapper = JSON.parse(text);
-        data = JSON.parse(wrapper.contents);
-      } else {
-        data = JSON.parse(text);
-      }
-
-      // v8 chart endpoint returns meta.regularMarketPrice
-      const price =
-        data?.chart?.result?.[0]?.meta?.regularMarketPrice ??
-        data?.chart?.result?.[0]?.meta?.previousClose ?? null;
-
-      if (price && price > 0) return price;
-    } catch (e) {
-      // try next proxy
-    }
+      const data = url === BASE ? JSON.parse(text) : (url.includes('allorigins') ? unwrapAori(text) : JSON.parse(text));
+      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
+                 ?? data?.chart?.result?.[0]?.meta?.previousClose;
+      if (price > 0) return price;
+    } catch {}
   }
-  return null; // all proxies failed
+  return null;
+}
+
+// ── Source 4: MFAPI.in — free mutual fund NAV by scheme code
+// Ticker format: MF:<schemeCode>  e.g. MF:120503
+async function fetchMFAPI(schemeCode) {
+  try {
+    const r = await fetch(`https://api.mfapi.in/mf/${schemeCode}/latest`, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const nav = parseFloat(d?.data?.[0]?.nav);
+    return nav > 0 ? nav : null;
+  } catch { return null; }
+}
+
+// ── SMART ROUTER: picks the right source based on ticker prefix / type
+async function fetchPrice(h) {
+  const ticker = (h.ticker || '').trim();
+  if (!ticker) return null;
+
+  // BSE:<scripCode>  — e.g. BSE:513337
+  if (ticker.startsWith('BSE:')) {
+    const code = ticker.slice(4);
+    return await fetchBSE(code)
+        ?? await fetchYahoo(code + '.BO');
+  }
+
+  // NSE:<symbol>  — e.g. NSE:RELIANCE
+  if (ticker.startsWith('NSE:')) {
+    const sym = ticker.slice(4);
+    return await fetchNSE(sym)
+        ?? await fetchYahoo(sym + '.NS');
+  }
+
+  // MF:<schemeCode>  — e.g. MF:120503
+  if (ticker.startsWith('MF:')) {
+    return await fetchMFAPI(ticker.slice(3))
+        ?? await fetchYahoo(ticker.slice(3));
+  }
+
+  // Legacy .NS / .BO suffixes (backward compatible)
+  if (ticker.endsWith('.NS') || ticker.endsWith('.BO')) {
+    // Try BSE/NSE API first for better small-cap coverage
+    if (ticker.endsWith('.BO')) {
+      // Extract likely scrip code if it's a number
+      const possibleCode = ticker.replace('.BO','');
+      if (/^\d+$/.test(possibleCode)) {
+        const p = await fetchBSE(possibleCode);
+        if (p) return p;
+      } else {
+        const p = await fetchNSE(possibleCode);
+        if (p) return p;
+      }
+    }
+    if (ticker.endsWith('.NS')) {
+      const sym = ticker.replace('.NS','');
+      const p = await fetchNSE(sym);
+      if (p) return p;
+    }
+    return await fetchYahoo(ticker);
+  }
+
+  // Plain US ticker (no suffix) — straight to Yahoo
+  if (h.type === 'us') {
+    return await fetchYahoo(ticker);
+  }
+
+  // Unknown format — try Yahoo as last resort
+  return await fetchYahoo(ticker);
 }
 
 async function syncPrices() {
-  const btn  = document.getElementById('syncBtn');
+  const btn = document.getElementById('syncBtn');
   btn.classList.add('spinning');
   btn.disabled = true;
   btn.querySelector('span') && (btn.querySelector('span').textContent = 'Syncing…');
 
-  // Use live DOM value if on settings screen, else fall back to saved setting
-  const usdRateEl = document.getElementById('usdRate');
-  const usdRate = parseFloat(usdRateEl?.value) || settings.usdRate || 84.5;
+  const usdRate = parseFloat(document.getElementById('usdRate')?.value) || settings.usdRate || 84.5;
 
   const toSync = holdings.filter(h => h.ticker && h.type !== 'fd');
   let updated = 0, failed = 0;
+  const failedNames = [];
 
-  // Fetch in parallel for speed (batch of 5 to avoid rate limits)
-  const BATCH = 5;
+  // Batch parallel fetches (3 at a time — BSE API is sensitive to bursts)
+  const BATCH = 3;
   for (let i = 0; i < toSync.length; i += BATCH) {
     const batch = toSync.slice(i, i + BATCH);
-    const results = await Promise.all(batch.map(h => fetchPrice(h.ticker)));
+    const results = await Promise.all(batch.map(h => fetchPrice(h)));
     results.forEach((price, idx) => {
       const h = batch[idx];
       if (price !== null) {
         h.current = h.type === 'us' ? price * usdRate : price;
+        h.priceStale = false;
         updated++;
       } else {
+        h.priceStale = true;
         failed++;
-        console.warn(`Price fetch failed for ${h.ticker}`);
+        failedNames.push(h.name.split(' ')[0]);
+        console.warn(`Price fetch failed for ${h.ticker} (${h.name})`);
       }
     });
   }
 
-  // FD: compute accrued value using compound interest
+  // FD: compound interest accrual
   holdings.filter(h => h.type === 'fd' && h.fdRate).forEach(h => {
     const elapsed = (Date.now() - new Date(h.addedAt).getTime()) / (365.25 * 86400000);
-    h.current = h.qty > 0
-      ? h.qty * h.buy * Math.pow(1 + h.fdRate / 100, elapsed) // per-unit FD
-      : h.buy  * Math.pow(1 + h.fdRate / 100, elapsed);
+    h.current = h.buy * Math.pow(1 + h.fdRate / 100, elapsed);
   });
 
   settings.lastSync = new Date().toISOString();
@@ -802,16 +895,15 @@ async function syncPrices() {
 
   btn.classList.remove('spinning');
   btn.disabled = false;
+  btn.querySelector('span') && (btn.querySelector('span').textContent = 'Sync prices');
 
-  // Show brief result toast
-  showToast(
-    failed === 0
-      ? `✓ Prices updated (${updated} holdings)`
-      : updated > 0
-        ? `✓ ${updated} updated · ${failed} failed (check tickers)`
-        : `✗ Sync failed — check connection`,
-    failed > 0 && updated === 0 ? 'error' : 'success'
-  );
+  const msg = failed === 0
+    ? `✓ All ${updated} holdings updated`
+    : updated > 0
+      ? `✓ ${updated} updated · ⚠ ${failedNames.join(', ')} failed`
+      : `✗ Sync failed — check connection or tickers`;
+
+  showToast(msg, failed > 0 && updated === 0 ? 'error' : updated > 0 ? 'success' : 'error');
 }
 
 // ── TOAST ──────────────────────────────────────────────────────────────
@@ -926,12 +1018,15 @@ function renderList(containerId, list, emptyId, _) {
       : h.ticker
         ? `${h.qty} ${h.type==='mf'?'units':'shares'} · ${h.ticker}`
         : `${h.qty} units`;
+    const staleTag = h.priceStale
+      ? `<span style="font-size:10px;background:rgba(255,184,48,0.15);color:var(--amber);padding:2px 6px;border-radius:4px;margin-left:4px;vertical-align:middle">⚠ stale</span>`
+      : '';
     return `
       <div class="holding-row" onclick='openAddModal(${JSON.stringify(h).replace(/'/g,"\\'")})'
            style="border-left:3px solid ${typeColors[h.type]}">
         <div class="holding-logo" style="color:${typeColors[h.type]}">${abbr}</div>
         <div class="holding-info">
-          <div class="holding-name">${h.name}</div>
+          <div class="holding-name">${h.name}${staleTag}</div>
           <div class="holding-meta">${meta}${h.note ? ' · ' + h.note : ''}</div>
         </div>
         <div class="holding-right">
