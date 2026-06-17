@@ -62,7 +62,6 @@
     transition: border-color 0.2s, color 0.2s;
   }
   .sync-btn:hover { border-color: var(--green); color: var(--green); }
-  .sync-btn.spinning svg { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ── TABS ── */
@@ -299,7 +298,7 @@
       <svg id="syncIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
       </svg>
-      Sync prices
+      <span>Sync prices</span>
     </button>
   </div>
   <div class="tab-bar">
@@ -718,51 +717,128 @@ function deleteHolding() {
 }
 
 // ── LIVE PRICES ────────────────────────────────────────────────────────
+
+// Multiple proxy fallbacks — tried in order until one works
+const PROXIES = [
+  ticker => `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
+  ticker => `https://api.allorigins.win/get?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`)}`,
+  ticker => `https://corsproxy.io/?${encodeURIComponent(`https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`)}`,
+];
+
 async function fetchPrice(ticker) {
   if (!ticker) return null;
-  try {
-    // Yahoo Finance v7 (CORS proxy via allorigins)
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}&fields=regularMarketPrice,shortName`;
-    const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-    const r = await fetch(proxy, {signal: AbortSignal.timeout(8000)});
-    if (!r.ok) return null;
-    const d = await r.json();
-    const parsed = JSON.parse(d.contents);
-    const q = parsed?.quoteResponse?.result?.[0];
-    return q?.regularMarketPrice || null;
-  } catch { return null; }
+
+  for (let i = 0; i < PROXIES.length; i++) {
+    try {
+      const url = PROXIES[i](ticker);
+      const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
+      if (!r.ok) continue;
+
+      let data;
+      const text = await r.text();
+
+      // allorigins wraps in { contents: "..." }
+      if (i === 1) {
+        const wrapper = JSON.parse(text);
+        data = JSON.parse(wrapper.contents);
+      } else {
+        data = JSON.parse(text);
+      }
+
+      // v8 chart endpoint returns meta.regularMarketPrice
+      const price =
+        data?.chart?.result?.[0]?.meta?.regularMarketPrice ??
+        data?.chart?.result?.[0]?.meta?.previousClose ?? null;
+
+      if (price && price > 0) return price;
+    } catch (e) {
+      // try next proxy
+    }
+  }
+  return null; // all proxies failed
 }
 
 async function syncPrices() {
-  const btn = document.getElementById('syncBtn');
-  const icon = document.getElementById('syncIcon');
+  const btn  = document.getElementById('syncBtn');
   btn.classList.add('spinning');
   btn.disabled = true;
+  btn.querySelector('span') && (btn.querySelector('span').textContent = 'Syncing…');
 
-  const usdRate = parseFloat(document.getElementById('usdRate')?.value || settings.usdRate);
+  // Use live DOM value if on settings screen, else fall back to saved setting
+  const usdRateEl = document.getElementById('usdRate');
+  const usdRate = parseFloat(usdRateEl?.value) || settings.usdRate || 84.5;
+
   const toSync = holdings.filter(h => h.ticker && h.type !== 'fd');
+  let updated = 0, failed = 0;
 
-  for (const h of toSync) {
-    const price = await fetchPrice(h.ticker);
-    if (price !== null) {
-      h.current = h.type === 'us' ? price * usdRate : price;
-    }
+  // Fetch in parallel for speed (batch of 5 to avoid rate limits)
+  const BATCH = 5;
+  for (let i = 0; i < toSync.length; i += BATCH) {
+    const batch = toSync.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map(h => fetchPrice(h.ticker)));
+    results.forEach((price, idx) => {
+      const h = batch[idx];
+      if (price !== null) {
+        h.current = h.type === 'us' ? price * usdRate : price;
+        updated++;
+      } else {
+        failed++;
+        console.warn(`Price fetch failed for ${h.ticker}`);
+      }
+    });
   }
 
-  // FD: compute accrued value
+  // FD: compute accrued value using compound interest
   holdings.filter(h => h.type === 'fd' && h.fdRate).forEach(h => {
-    const days = h.fdMaturity
-      ? Math.max(0, (new Date(h.fdMaturity) - new Date()) / 864e5)
-      : 0;
-    const elapsed = (new Date() - new Date(h.addedAt)) / (365.25 * 864e5);
-    h.current = h.buy * Math.pow(1 + h.fdRate / 100, elapsed);
+    const elapsed = (Date.now() - new Date(h.addedAt).getTime()) / (365.25 * 86400000);
+    h.current = h.qty > 0
+      ? h.qty * h.buy * Math.pow(1 + h.fdRate / 100, elapsed) // per-unit FD
+      : h.buy  * Math.pow(1 + h.fdRate / 100, elapsed);
   });
 
   settings.lastSync = new Date().toISOString();
   save();
+  renderAll();
+
   btn.classList.remove('spinning');
   btn.disabled = false;
-  renderAll();
+
+  // Show brief result toast
+  showToast(
+    failed === 0
+      ? `✓ Prices updated (${updated} holdings)`
+      : updated > 0
+        ? `✓ ${updated} updated · ${failed} failed (check tickers)`
+        : `✗ Sync failed — check connection`,
+    failed > 0 && updated === 0 ? 'error' : 'success'
+  );
+}
+
+// ── TOAST ──────────────────────────────────────────────────────────────
+function showToast(msg, type = 'success') {
+  let t = document.getElementById('wl-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'wl-toast';
+    t.style.cssText = `
+      position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);
+      background:var(--card);border:1px solid var(--border);border-radius:20px;
+      padding:10px 20px;font-size:13px;font-weight:500;z-index:9999;
+      opacity:0;transition:opacity 0.2s,transform 0.2s;white-space:nowrap;
+      box-shadow:0 4px 20px rgba(0,0,0,0.4);
+    `;
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.color = type === 'error' ? 'var(--red)' : 'var(--green)';
+  t.style.borderColor = type === 'error' ? 'rgba(255,92,92,0.3)' : 'rgba(34,214,122,0.3)';
+  t.style.opacity = '1';
+  t.style.transform = 'translateX(-50%) translateY(0)';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => {
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(-50%) translateY(20px)';
+  }, 3500);
 }
 
 // ── RENDER ─────────────────────────────────────────────────────────────
@@ -948,9 +1024,21 @@ function save() {
 // ── INIT ───────────────────────────────────────────────────────────────
 document.getElementById('usdRate').value = settings.usdRate;
 document.getElementById('autoSyncToggle').classList.toggle('on', settings.autoSync);
+
+// Fix sync button spin to target the svg icon inside it
+document.getElementById('syncBtn').addEventListener('click', () => {});
+
+// Add spin style targeting the icon svg
+const style = document.createElement('style');
+style.textContent = `.sync-btn.spinning #syncIcon { animation: spin 1s linear infinite; }`;
+document.head.appendChild(style);
+
 renderAll();
 
-if (settings.autoSync && holdings.length) syncPrices();
+// Auto-sync on load: use a small delay so the page renders first
+if (settings.autoSync && holdings.length) {
+  setTimeout(() => syncPrices(), 400);
+}
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
