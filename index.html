@@ -284,6 +284,84 @@
   /* ── PRICE TAG ── */
   .price-loading { opacity: 0.5; font-style: italic; }
 
+  /* ── TYPE PILLS ── */
+  .type-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .type-pill {
+    flex: 1; min-width: 0; padding: 9px 8px; border-radius: var(--r-sm);
+    background: var(--card); border: 1.5px solid var(--border);
+    color: var(--text2); font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    white-space: nowrap; text-align: center;
+  }
+  .type-pill.active {
+    border-color: var(--green); color: var(--green);
+    background: rgba(34,214,122,0.08);
+  }
+
+  /* ── EXCHANGE PILLS ── */
+  .exchange-pills { display: flex; gap: 8px; }
+  .exch-pill {
+    padding: 8px 22px; border-radius: var(--r-sm);
+    background: var(--card); border: 1.5px solid var(--border);
+    color: var(--text2); font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+  }
+  .exch-pill.active {
+    border-color: var(--blue); color: var(--blue);
+    background: rgba(78,139,255,0.1);
+  }
+
+  /* ── SEARCH INPUT ── */
+  .search-input-wrap { position: relative; display: flex; gap: 8px; }
+  .search-input-wrap .form-input { flex: 1; }
+  .search-spinner {
+    position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+    color: var(--text2);
+  }
+  .search-spinner svg { animation: spin 0.8s linear infinite; display: block; }
+  .fetch-btn {
+    background: var(--blue); color: #fff; border: none;
+    border-radius: var(--r-sm); padding: 0 16px;
+    font-size: 13px; font-weight: 600; cursor: pointer; flex-shrink: 0;
+    transition: opacity 0.15s;
+  }
+  .fetch-btn:hover { opacity: 0.85; }
+
+  /* ── SEARCH DROPDOWN ── */
+  .search-dropdown {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 600;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
+    overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    max-height: 220px; overflow-y: auto;
+  }
+  .dd-item {
+    padding: 12px 14px; cursor: pointer; transition: background 0.1s;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dd-item:last-child { border-bottom: none; }
+  .dd-item:hover, .dd-item.focused { background: var(--card); }
+  .dd-name { font-size: 13px; font-weight: 600; color: var(--white); }
+  .dd-meta { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .dd-price { font-size: 13px; font-weight: 700; color: var(--green); flex-shrink: 0; }
+  .dd-empty { padding: 16px; text-align: center; font-size: 13px; color: var(--text2); }
+
+  /* ── FETCHED CARD ── */
+  .fetched-card {
+    background: rgba(34,214,122,0.06); border: 1px solid rgba(34,214,122,0.25);
+    border-radius: var(--r-sm); padding: 14px 16px; margin-bottom: 16px;
+  }
+  .fetched-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .fetched-name { font-size: 14px; font-weight: 700; color: var(--white); }
+  .fetched-meta { font-size: 12px; color: var(--text2); margin-top: 3px; }
+  .fetched-price { font-size: 18px; font-weight: 700; color: var(--green); }
+  .fetched-change { font-size: 12px; margin-top: 2px; }
+  .fetched-extra { margin-top: 10px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text2); }
+  .fetched-extra span { background: var(--card); padding: 3px 8px; border-radius: 4px; }
+
+  /* ── SEARCH BLOCK ── */
+  .search-block { margin-bottom: 4px; }
+
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
   }
@@ -483,10 +561,10 @@
 
   <div class="settings-row">
     <div>
-      <div class="settings-label">Price source</div>
-      <div class="settings-sub">Yahoo Finance (free, no auth)</div>
+      <div class="settings-label">Price sources</div>
+      <div class="settings-sub">BSE API · NSE API · MFAPI · Yahoo Finance</div>
     </div>
-    <span class="info-badge">Yahoo</span>
+    <span class="info-badge">Multi</span>
   </div>
 
   <div style="margin-top:24px">
@@ -494,9 +572,9 @@
   </div>
 
   <div style="margin-top:32px;text-align:center;font-size:12px;color:var(--muted);line-height:1.8">
-    WealthLens v1.0 · Data stored locally on device<br>
+    WealthLens v2.0 · Data stored locally on device<br>
     No account needed · No data leaves your phone<br>
-    Price data via Yahoo Finance public API
+    Prices: BSE India · NSE India · MFAPI.in · Yahoo Finance
   </div>
 </div>
 
@@ -506,76 +584,190 @@
     <div class="modal-handle"></div>
     <div class="modal-title" id="modalTitle">Add holding</div>
 
+    <!-- STEP 1: Asset type pills -->
     <div class="form-group">
-      <label class="form-label">Asset type</label>
-      <select class="form-select" id="assetType" onchange="onTypeChange()">
-        <option value="stock">🇮🇳 Indian stock (NSE/BSE)</option>
-        <option value="mf">🏦 Mutual fund</option>
-        <option value="us">🌐 US stock</option>
-        <option value="fd">🏛️ FD / EPF / Savings</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label" id="nameLabel">Company / fund name</label>
-      <input class="form-input" id="holdingName" placeholder="e.g. Reliance Industries" autocomplete="off">
-    </div>
-
-    <div id="tickerGroup" class="form-group">
-      <label class="form-label" id="tickerLabel">Ticker / scrip code</label>
-      <input class="form-input" id="holdingTicker" placeholder="e.g. BSE:513337 or NSE:RELIANCE" autocomplete="off" style="text-transform:uppercase">
-      <div style="font-size:11px;color:var(--muted);margin-top:4px" id="tickerHint">BSE:513337 · NSE:RELIANCE · MF:120503 · or AAPL for US</div>
-    </div>
-
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label" id="qty1Label">Quantity / units</label>
-        <input class="form-input" id="holdingQty" type="number" placeholder="100" min="0" step="any">
-      </div>
-      <div class="form-group">
-        <label class="form-label" id="price1Label">Avg buy price (₹)</label>
-        <input class="form-input" id="holdingBuy" type="number" placeholder="2500" min="0" step="any">
+      <label class="form-label">What are you adding?</label>
+      <div class="type-pills" id="typePills">
+        <button class="type-pill active" data-type="stock" onclick="selectType('stock',this)">🇮🇳 Indian Stock</button>
+        <button class="type-pill" data-type="mf"    onclick="selectType('mf',this)">🏦 Mutual Fund</button>
+        <button class="type-pill" data-type="us"    onclick="selectType('us',this)">🌐 US Stock</button>
+        <button class="type-pill" data-type="fd"    onclick="selectType('fd',this)">🏛️ FD / EPF</button>
       </div>
     </div>
 
-    <div id="currentPriceGroup" class="form-group">
-      <label class="form-label">Current price (₹) — optional, synced automatically</label>
-      <input class="form-input" id="holdingCurrent" type="number" placeholder="Auto-fetched" min="0" step="any">
+    <!-- STEP 2a: Indian stock — exchange + search -->
+    <div id="inStockSearch" class="search-block">
+      <div class="form-group">
+        <label class="form-label">Exchange</label>
+        <div class="exchange-pills">
+          <button class="exch-pill active" id="exchBSE" onclick="selectExchange('BSE')">BSE</button>
+          <button class="exch-pill" id="exchNSE" onclick="selectExchange('NSE')">NSE</button>
+        </div>
+      </div>
+      <div class="form-group" style="position:relative">
+        <label class="form-label" id="searchLabel">Search by name or scrip code</label>
+        <div class="search-input-wrap">
+          <input class="form-input" id="stockSearchInput"
+            placeholder="e.g. 513337 or Reliance" autocomplete="off"
+            oninput="onStockSearch(this.value)" onkeydown="onSearchKey(event)">
+          <div class="search-spinner" id="searchSpinner" style="display:none">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          </div>
+        </div>
+        <div class="search-dropdown" id="searchDropdown" style="display:none"></div>
+      </div>
+      <!-- fetched stock card -->
+      <div id="stockCard" style="display:none" class="fetched-card">
+        <div class="fetched-row">
+          <div>
+            <div class="fetched-name" id="fcName">—</div>
+            <div class="fetched-meta" id="fcMeta">—</div>
+          </div>
+          <div style="text-align:right">
+            <div class="fetched-price" id="fcPrice">—</div>
+            <div class="fetched-change" id="fcChange">—</div>
+          </div>
+        </div>
+        <div class="fetched-extra" id="fcExtra"></div>
+      </div>
     </div>
 
-    <!-- FD extra fields -->
-    <div id="fdExtras" style="display:none">
+    <!-- STEP 2b: MF search -->
+    <div id="mfSearch" class="search-block" style="display:none">
+      <div class="form-group" style="position:relative">
+        <label class="form-label">Search mutual fund by name or scheme code</label>
+        <div class="search-input-wrap">
+          <input class="form-input" id="mfSearchInput"
+            placeholder="e.g. 120503 or Axis Bluechip" autocomplete="off"
+            oninput="onMFSearch(this.value)" onkeydown="onMFKey(event)">
+          <div class="search-spinner" id="mfSpinner" style="display:none">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          </div>
+        </div>
+        <div class="search-dropdown" id="mfDropdown" style="display:none"></div>
+      </div>
+      <div id="mfCard" style="display:none" class="fetched-card">
+        <div class="fetched-row">
+          <div style="flex:1;min-width:0">
+            <div class="fetched-name" id="mfcName">—</div>
+            <div class="fetched-meta" id="mfcMeta">—</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div class="fetched-price" id="mfcNav">—</div>
+            <div class="fetched-change" style="color:var(--text2)">NAV</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2c: US stock -->
+    <div id="usSearch" class="search-block" style="display:none">
+      <div class="form-group">
+        <label class="form-label">US ticker symbol</label>
+        <div class="search-input-wrap">
+          <input class="form-input" id="usTickerInput"
+            placeholder="e.g. AAPL, TSLA, NVDA, AMZN" autocomplete="off"
+            style="text-transform:uppercase"
+            oninput="onUSInput(this.value)">
+          <div class="search-spinner" id="usSpinner" style="display:none">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          </div>
+          <button class="fetch-btn" onclick="fetchUSPrice()">Fetch</button>
+        </div>
+      </div>
+      <div id="usCard" style="display:none" class="fetched-card">
+        <div class="fetched-row">
+          <div>
+            <div class="fetched-name" id="uscName">—</div>
+            <div class="fetched-meta" id="uscMeta">—</div>
+          </div>
+          <div style="text-align:right">
+            <div class="fetched-price" id="uscPrice">—</div>
+            <div class="fetched-change" id="uscChange" style="color:var(--text2)">USD</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2d: FD / EPF -->
+    <div id="fdForm" class="search-block" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Bank / institution name</label>
+        <input class="form-input" id="fdName" placeholder="e.g. SBI, HDFC, EPF">
+      </div>
+    </div>
+
+    <!-- Hidden store for internal use -->
+    <input type="hidden" id="holdingName">
+    <input type="hidden" id="holdingTicker">
+    <input type="hidden" id="assetType" value="stock">
+
+    <!-- STEP 3: Quantity + buy price (shown after stock is selected) -->
+    <div id="qtyBlock" style="display:none">
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Interest rate (%)</label>
-          <input class="form-input" id="fdRate" type="number" placeholder="7.5" min="0" step="0.1">
+          <label class="form-label" id="qty1Label">Quantity</label>
+          <input class="form-input" id="holdingQty" type="number" placeholder="100" min="0" step="any">
+        </div>
+        <div class="form-group">
+          <label class="form-label" id="price1Label">Avg buy price (₹)</label>
+          <input class="form-input" id="holdingBuy" type="number" placeholder="2500" min="0" step="any">
+        </div>
+      </div>
+      <div id="currentPriceGroup" class="form-group">
+        <label class="form-label">Current price — <span style="color:var(--green)">auto-fetched ✓</span></label>
+        <input class="form-input" id="holdingCurrent" type="number" placeholder="Auto-fetched" min="0" step="any">
+      </div>
+
+      <!-- FD extra fields -->
+      <div id="fdExtras" style="display:none">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Principal (₹)</label>
+            <input class="form-input" id="holdingQty2" type="number" placeholder="100000" min="0" step="any">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Interest rate (%)</label>
+            <input class="form-input" id="fdRate" type="number" placeholder="7.5" min="0" step="0.1">
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Maturity date</label>
           <input class="form-input" id="fdMaturity" type="date">
         </div>
+        <div class="form-group">
+          <label class="form-label">Instrument type</label>
+          <select class="form-select" id="fdSubtype">
+            <option value="fd">Fixed Deposit</option>
+            <option value="epf">EPF</option>
+            <option value="ppf">PPF</option>
+            <option value="savings">Savings Account</option>
+            <option value="nps">NPS</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
       </div>
+
       <div class="form-group">
-        <label class="form-label">FD / instrument type</label>
-        <select class="form-select" id="fdSubtype">
-          <option value="fd">Fixed Deposit</option>
-          <option value="epf">EPF</option>
-          <option value="ppf">PPF</option>
-          <option value="savings">Savings Account</option>
-          <option value="nps">NPS</option>
-          <option value="other">Other</option>
-        </select>
+        <label class="form-label">Notes (optional)</label>
+        <input class="form-input" id="holdingNote" placeholder="Broker, folio number, etc.">
       </div>
+
+      <button class="btn-primary" onclick="saveHolding()" id="saveBtn">Add holding</button>
+      <button class="btn-danger" id="deleteBtn" style="display:none" onclick="deleteHolding()">Remove holding</button>
+      <div style="height:10px"></div>
     </div>
 
-    <div class="form-group">
-      <label class="form-label">Notes (optional)</label>
-      <input class="form-input" id="holdingNote" placeholder="Broker, folio number, etc.">
+    <!-- FD save button shown separately -->
+    <div id="fdSaveBlock" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Notes (optional)</label>
+        <input class="form-input" id="fdNote" placeholder="Bank branch, account number, etc.">
+      </div>
+      <button class="btn-primary" onclick="saveFD()" id="fdSaveBtn">Add FD / EPF</button>
+      <button class="btn-danger" id="fdDeleteBtn" style="display:none" onclick="deleteHolding()">Remove</button>
+      <div style="height:10px"></div>
     </div>
-
-    <button class="btn-primary" onclick="saveHolding()" id="saveBtn">Add holding</button>
-    <button class="btn-danger" id="deleteBtn" style="display:none" onclick="deleteHolding()">Remove holding</button>
-    <div style="height:10px"></div>
   </div>
 </div>
 
@@ -616,101 +808,520 @@ function switchNav(page) {
   renderAll();
 }
 
-// ── MODAL ──────────────────────────────────────────────────────────────
+// ── MODAL STATE ────────────────────────────────────────────────────────
+let currentType   = 'stock';
+let currentExch   = 'BSE';
+let selectedStock = null; // { name, ticker, price, extra }
+let selectedMF    = null;
+let selectedUS    = null;
+let searchTimer   = null;
+let mfList_cache  = null;
+
 function openAddModal(h) {
   editId = h ? h.id : null;
-  const modal = document.getElementById('addModal');
   document.getElementById('modalTitle').textContent = h ? 'Edit holding' : 'Add holding';
-  document.getElementById('saveBtn').textContent = h ? 'Save changes' : 'Add holding';
-  document.getElementById('deleteBtn').style.display = h ? '' : 'none';
+  resetModal();
 
   if (h) {
-    document.getElementById('assetType').value = h.type;
-    document.getElementById('holdingName').value = h.name;
-    document.getElementById('holdingTicker').value = h.ticker || '';
-    document.getElementById('holdingQty').value = h.qty;
-    document.getElementById('holdingBuy').value = h.buy;
-    document.getElementById('holdingCurrent').value = h.current || '';
-    document.getElementById('holdingNote').value = h.note || '';
-    if (h.type === 'fd') {
-      document.getElementById('fdRate').value = h.fdRate || '';
-      document.getElementById('fdMaturity').value = h.fdMaturity || '';
+    // Pre-fill from existing holding
+    selectType(h.type, document.querySelector(`.type-pill[data-type="${h.type}"]`), true);
+
+    if (h.type === 'stock') {
+      const exch = h.ticker?.startsWith('NSE:') ? 'NSE' : 'BSE';
+      selectExchange(exch, true);
+      const code = h.ticker?.replace(/^(BSE:|NSE:)/,'') || '';
+      document.getElementById('stockSearchInput').value = h.name;
+      selectedStock = { name: h.name, ticker: h.ticker, price: h.current };
+      showStockCard(h.name, h.ticker, h.current, null, null);
+    } else if (h.type === 'mf') {
+      document.getElementById('mfSearchInput').value = h.name;
+      selectedMF = { name: h.name, ticker: h.ticker, nav: h.current };
+      showMFCard(h.name, h.ticker, h.current);
+    } else if (h.type === 'us') {
+      document.getElementById('usTickerInput').value = h.ticker || '';
+      selectedUS = { name: h.name, ticker: h.ticker, priceUSD: null };
+      document.getElementById('uscName').textContent  = h.name;
+      document.getElementById('uscMeta').textContent  = h.ticker;
+      document.getElementById('uscPrice').textContent = '—';
+      document.getElementById('usCard').style.display = '';
+    } else if (h.type === 'fd') {
+      document.getElementById('fdName').value = h.name;
+      document.getElementById('holdingQty2').value = h.buy || '';
+      document.getElementById('fdRate').value    = h.fdRate || '';
+      document.getElementById('fdMaturity').value= h.fdMaturity || '';
       document.getElementById('fdSubtype').value = h.fdSubtype || 'fd';
+      document.getElementById('fdNote').value    = h.note || '';
     }
-  } else {
-    document.getElementById('assetType').value = 'stock';
-    ['holdingName','holdingTicker','holdingQty','holdingBuy','holdingCurrent','holdingNote','fdRate','fdMaturity'].forEach(i => document.getElementById(i).value = '');
-    document.getElementById('fdSubtype').value = 'fd';
+
+    if (h.type !== 'fd') {
+      document.getElementById('holdingQty').value     = h.qty;
+      document.getElementById('holdingBuy').value     = h.buy;
+      document.getElementById('holdingCurrent').value = h.current || '';
+      document.getElementById('holdingNote').value    = h.note || '';
+      showQtyBlock();
+    } else {
+      document.getElementById('fdSaveBlock').style.display = '';
+      document.getElementById('fdDeleteBtn').style.display = '';
+    }
+
+    document.getElementById('deleteBtn').style.display   = h.type !== 'fd' ? '' : 'none';
+    document.getElementById('fdDeleteBtn').style.display = h.type === 'fd' ? '' : 'none';
+    document.getElementById('saveBtn').textContent       = 'Save changes';
+    document.getElementById('fdSaveBtn').textContent     = 'Save changes';
   }
-  onTypeChange();
-  modal.classList.add('open');
+
+  document.getElementById('addModal').classList.add('open');
 }
 
-function closeModal() { document.getElementById('addModal').classList.remove('open'); }
+function resetModal() {
+  selectedStock = selectedMF = selectedUS = null;
+  ['stockSearchInput','mfSearchInput','usTickerInput','fdName',
+   'holdingQty','holdingBuy','holdingCurrent','holdingNote',
+   'holdingQty2','fdRate','fdNote'].forEach(i => {
+    const el = document.getElementById(i); if (el) el.value = '';
+  });
+  document.getElementById('fdMaturity').value = '';
+  document.getElementById('fdSubtype').value  = 'fd';
+  document.getElementById('stockCard').style.display  = 'none';
+  document.getElementById('mfCard').style.display     = 'none';
+  document.getElementById('usCard').style.display     = 'none';
+  document.getElementById('searchDropdown').style.display = 'none';
+  document.getElementById('mfDropdown').style.display     = 'none';
+  document.getElementById('qtyBlock').style.display       = 'none';
+  document.getElementById('fdSaveBlock').style.display    = 'none';
+  document.getElementById('deleteBtn').style.display      = 'none';
+  document.getElementById('fdDeleteBtn').style.display    = 'none';
+  document.getElementById('saveBtn').textContent    = 'Add holding';
+  document.getElementById('fdSaveBtn').textContent  = 'Add FD / EPF';
+  selectType('stock', document.querySelector('.type-pill[data-type="stock"]'), true);
+  selectExchange('BSE', true);
+}
+
+function closeModal() {
+  document.getElementById('addModal').classList.remove('open');
+  document.getElementById('searchDropdown').style.display = 'none';
+  document.getElementById('mfDropdown').style.display     = 'none';
+}
 document.getElementById('addModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
 
-function onTypeChange() {
-  const t = document.getElementById('assetType').value;
-  const fdExtras = document.getElementById('fdExtras');
-  const tickerGroup = document.getElementById('tickerGroup');
-  const hint = document.getElementById('tickerHint');
-  const cp = document.getElementById('currentPriceGroup');
+// ── TYPE SELECTION ──────────────────────────────────────────────────────
+function selectType(type, btn, silent) {
+  currentType = type;
+  document.getElementById('assetType').value = type;
 
-  fdExtras.style.display = t === 'fd' ? '' : 'none';
-  tickerGroup.style.display = t === 'fd' ? 'none' : '';
-  cp.style.display = t === 'fd' ? 'none' : '';
+  if (!silent && btn) {
+    document.querySelectorAll('.type-pill').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+  } else if (btn) {
+    document.querySelectorAll('.type-pill').forEach(p => p.classList.remove('active'));
+    btn && btn.classList.add('active');
+  }
 
-  if (t === 'stock') hint.innerHTML = `
-    <b style="color:var(--text1)">BSE:</b>513337 &nbsp;·&nbsp;
-    <b style="color:var(--text1)">NSE:</b>RELIANCE &nbsp;·&nbsp;
-    or legacy RELIANCE.NS / 513337.BO
-  `;
-  else if (t === 'us') hint.textContent = 'US tickers: AAPL, TSLA, NVDA, AMZN (no suffix needed)';
-  else if (t === 'mf') { hint.innerHTML = `<b style="color:var(--text1)">MF:</b>120503 &nbsp;·&nbsp; Find scheme code at mfapi.in`; tickerGroup.style.display = ''; }
+  // Sync pill UI even when called silently (edit mode)
+  const target = document.querySelector(`.type-pill[data-type="${type}"]`);
+  if (target) {
+    document.querySelectorAll('.type-pill').forEach(p => p.classList.remove('active'));
+    target.classList.add('active');
+  }
 
-  document.getElementById('nameLabel').textContent =
-    t === 'mf' ? 'Fund name' : t === 'fd' ? 'Bank / institution name' : 'Company name';
-  document.getElementById('price1Label').textContent =
-    t === 'us' ? 'Avg buy price (USD)' : t === 'mf' ? 'Avg buy NAV (₹)' : 'Avg buy price (₹)';
-  document.getElementById('qty1Label').textContent =
-    t === 'mf' ? 'Units' : 'Quantity';
+  document.getElementById('inStockSearch').style.display = type === 'stock' ? '' : 'none';
+  document.getElementById('mfSearch').style.display      = type === 'mf'    ? '' : 'none';
+  document.getElementById('usSearch').style.display      = type === 'us'    ? '' : 'none';
+  document.getElementById('fdForm').style.display        = type === 'fd'    ? '' : 'none';
+  document.getElementById('fdExtras').style.display      = type === 'fd'    ? '' : 'none';
+  document.getElementById('qty1Label').textContent       = type === 'mf' ? 'Units' : 'Quantity';
+  document.getElementById('price1Label').textContent     = type === 'us'
+    ? 'Avg buy price (USD)' : type === 'mf' ? 'Avg buy NAV (₹)' : 'Avg buy price (₹)';
+  document.getElementById('currentPriceGroup').style.display = type === 'fd' ? 'none' : '';
+
+  if (!silent) {
+    document.getElementById('qtyBlock').style.display    = 'none';
+    document.getElementById('fdSaveBlock').style.display = type === 'fd' ? '' : 'none';
+    selectedStock = selectedMF = selectedUS = null;
+  }
 }
 
+// ── EXCHANGE SELECTION ──────────────────────────────────────────────────
+function selectExchange(exch, silent) {
+  currentExch = exch;
+  document.getElementById('exchBSE').classList.toggle('active', exch === 'BSE');
+  document.getElementById('exchNSE').classList.toggle('active', exch === 'NSE');
+  document.getElementById('searchLabel').textContent =
+    exch === 'BSE'
+      ? 'Search by company name or BSE scrip code'
+      : 'Search by company name or NSE symbol';
+  document.getElementById('stockSearchInput').placeholder =
+    exch === 'BSE' ? 'e.g. 513337 or Gujarat Toolroom' : 'e.g. RELIANCE or Reliance Industries';
+  if (!silent) {
+    document.getElementById('stockSearchInput').value = '';
+    document.getElementById('stockCard').style.display = 'none';
+    document.getElementById('searchDropdown').style.display = 'none';
+    selectedStock = null;
+    document.getElementById('qtyBlock').style.display = 'none';
+  }
+}
+
+// ── STOCK SEARCH (BSE / NSE) ────────────────────────────────────────────
+const AORI2 = url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+
+async function searchBSE(query) {
+  // BSE search API
+  const url = `https://api.bseindia.com/BseIndiaAPI/api/ComHeader/w?quotetype=EQ&scripcode=${encodeURIComponent(query)}&seriesid=`;
+  // Also try the search endpoint for name queries
+  const searchUrl = `https://api.bseindia.com/BseIndiaAPI/api/MktWatch/w?Type=SI&Sectortype=0&grptype=LARGE&SubSector=&industry=0&Scrip_Code=${encodeURIComponent(query)}`;
+
+  // For numeric queries (scrip codes), fetch directly
+  if (/^\d+$/.test(query.trim())) {
+    return await fetchBSEByCode(query.trim());
+  }
+
+  // For name queries, use BSE autocomplete
+  const acUrl = `https://api.bseindia.com/BseIndiaAPI/api/GetSmartSearchList/w?strSearch=${encodeURIComponent(query)}`;
+  try {
+    const r = await fetch(AORI2(acUrl), { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return [];
+    const w = await r.json();
+    const data = JSON.parse(w.contents);
+    const arr = data?.Table || data?.table || [];
+    return arr.slice(0, 8).map(item => ({
+      name:    item.LONGNAME  || item.scrip_name || item.SCRIP_NAME || item.CompanyName,
+      code:    item.SCRIP_CD  || item.scripcode  || item.Scripcode,
+      ticker:  `BSE:${item.SCRIP_CD || item.scripcode}`,
+      price:   parseFloat(item.CurrRate || item.PRICE || 0) || null,
+      sector:  item.Sector || item.INDUSTRY || '',
+    })).filter(x => x.name && x.code);
+  } catch { return []; }
+}
+
+async function fetchBSEByCode(code) {
+  const url = `https://api.bseindia.com/BseIndiaAPI/api/getScripHeaderData/w?Debtflag=&scripcode=${code}&seriesid=`;
+  try {
+    const r = await fetch(AORI2(url), { signal: AbortSignal.timeout(7000) });
+    if (!r.ok) return null;
+    const w = await r.json();
+    const d = JSON.parse(w.contents);
+    const price = parseFloat(d?.CurrRate || d?.Currrate || 0);
+    const name  = d?.CompanyName || d?.LONGNAME || d?.scrip_name || code;
+    if (!name || name === code) return null;
+    return {
+      name, code,
+      ticker: `BSE:${code}`,
+      price:  price || null,
+      high:   parseFloat(d?.High52 || 0),
+      low:    parseFloat(d?.Low52  || 0),
+      pe:     parseFloat(d?.PE     || 0),
+      sector: d?.IndustryName || '',
+    };
+  } catch { return null; }
+}
+
+async function searchNSE(query) {
+  // NSE search
+  const url = `https://www.nseindia.com/api/search/autocomplete?q=${encodeURIComponent(query)}`;
+  try {
+    const r = await fetch(AORI2(url), { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) return [];
+    const w = await r.json();
+    const data = JSON.parse(w.contents);
+    const arr = data?.symbols || [];
+    return arr.slice(0, 8).map(item => ({
+      name:   item.symbol_info || item.symbol,
+      code:   item.symbol,
+      ticker: `NSE:${item.symbol}`,
+      price:  null,
+      sector: item.symbol_type || '',
+    })).filter(x => x.name && x.code);
+  } catch { return []; }
+}
+
+let searchAbort = null;
+async function onStockSearch(val) {
+  clearTimeout(searchTimer);
+  const dd = document.getElementById('searchDropdown');
+  const sp = document.getElementById('searchSpinner');
+
+  if (val.length < 2) { dd.style.display = 'none'; return; }
+
+  searchTimer = setTimeout(async () => {
+    if (searchAbort) searchAbort.abort();
+    searchAbort = new AbortController();
+    sp.style.display = '';
+
+    let results = [];
+    if (currentExch === 'BSE') {
+      if (/^\d+$/.test(val.trim())) {
+        // Direct code fetch
+        const r = await fetchBSEByCode(val.trim());
+        if (r) results = [r];
+      } else {
+        results = await searchBSE(val);
+      }
+    } else {
+      results = await searchNSE(val);
+    }
+
+    sp.style.display = 'none';
+    renderSearchDropdown(results);
+  }, 400);
+}
+
+function renderSearchDropdown(results) {
+  const dd = document.getElementById('searchDropdown');
+  if (!results.length) {
+    dd.innerHTML = `<div class="dd-empty">No results found. Try a different name or code.</div>`;
+    dd.style.display = '';
+    return;
+  }
+  dd.innerHTML = results.map((r, i) => `
+    <div class="dd-item" data-idx="${i}" onclick="selectSearchResult(${i})">
+      <div>
+        <div class="dd-name">${r.name}</div>
+        <div class="dd-meta">${r.ticker}${r.sector ? ' · ' + r.sector : ''}</div>
+      </div>
+      <div class="dd-price">${r.price ? '₹' + r.price.toLocaleString('en-IN',{maximumFractionDigits:2}) : '—'}</div>
+    </div>`).join('');
+  dd._results = results;
+  dd.style.display = '';
+}
+
+function onSearchKey(e) {
+  const dd = document.getElementById('searchDropdown');
+  if (!dd._results) return;
+  const items = dd.querySelectorAll('.dd-item');
+  let cur = [...items].findIndex(i => i.classList.contains('focused'));
+  if (e.key === 'ArrowDown') { cur = Math.min(cur+1, items.length-1); }
+  else if (e.key === 'ArrowUp') { cur = Math.max(cur-1, 0); }
+  else if (e.key === 'Enter' && cur >= 0) { selectSearchResult(cur); return; }
+  else return;
+  items.forEach(i => i.classList.remove('focused'));
+  items[cur]?.classList.add('focused');
+  e.preventDefault();
+}
+
+async function selectSearchResult(idx) {
+  const dd = document.getElementById('searchDropdown');
+  const r  = dd._results?.[idx];
+  if (!r) return;
+
+  dd.style.display = 'none';
+  document.getElementById('stockSearchInput').value = r.name;
+
+  // If price not yet fetched (NSE name search), fetch it now
+  let price = r.price;
+  if (!price && r.ticker) {
+    document.getElementById('searchSpinner').style.display = '';
+    price = await fetchPrice({ ticker: r.ticker, type: 'stock' });
+    document.getElementById('searchSpinner').style.display = 'none';
+  }
+
+  selectedStock = { name: r.name, ticker: r.ticker, price };
+  document.getElementById('holdingName').value   = r.name;
+  document.getElementById('holdingTicker').value = r.ticker;
+  showStockCard(r.name, r.ticker, price, r.high, r.low, r.pe, r.sector);
+  showQtyBlock();
+  if (price) document.getElementById('holdingCurrent').value = price.toFixed(2);
+}
+
+function showStockCard(name, ticker, price, high, low, pe, sector) {
+  document.getElementById('fcName').textContent  = name;
+  document.getElementById('fcMeta').textContent  = ticker + (sector ? ' · ' + sector : '');
+  document.getElementById('fcPrice').textContent = price
+    ? '₹' + price.toLocaleString('en-IN', {maximumFractionDigits:2}) : '—';
+  document.getElementById('fcChange').textContent = '';
+  document.getElementById('fcChange').className   = 'fetched-change';
+
+  let extras = [];
+  if (high) extras.push(`<span>52W H: ₹${high}</span>`);
+  if (low)  extras.push(`<span>52W L: ₹${low}</span>`);
+  if (pe)   extras.push(`<span>P/E: ${pe}</span>`);
+  document.getElementById('fcExtra').innerHTML = extras.join('');
+  document.getElementById('stockCard').style.display = '';
+}
+
+// ── MUTUAL FUND SEARCH ──────────────────────────────────────────────────
+async function loadMFList() {
+  if (mfList_cache) return mfList_cache;
+  try {
+    const r = await fetch('https://api.mfapi.in/mf', { signal: AbortSignal.timeout(8000) });
+    mfList_cache = await r.json(); // array of {schemeCode, schemeName}
+    return mfList_cache;
+  } catch { return []; }
+}
+
+async function onMFSearch(val) {
+  clearTimeout(searchTimer);
+  const dd = document.getElementById('mfDropdown');
+  const sp = document.getElementById('mfSpinner');
+  if (val.length < 2) { dd.style.display = 'none'; return; }
+
+  searchTimer = setTimeout(async () => {
+    sp.style.display = '';
+    const list = await loadMFList();
+    sp.style.display = 'none';
+
+    const q = val.toLowerCase();
+    // If numeric, filter by scheme code; else by name
+    const results = list.filter(f =>
+      /^\d+$/.test(val)
+        ? String(f.schemeCode).includes(val)
+        : f.schemeName.toLowerCase().includes(q)
+    ).slice(0, 10);
+
+    if (!results.length) {
+      dd.innerHTML = `<div class="dd-empty">No funds found. Try scheme code from mfapi.in</div>`;
+      dd.style.display = ''; return;
+    }
+    dd.innerHTML = results.map((f, i) => `
+      <div class="dd-item" data-idx="${i}" onclick="selectMF(${i})">
+        <div>
+          <div class="dd-name" style="white-space:normal;font-size:12px">${f.schemeName}</div>
+          <div class="dd-meta">Code: ${f.schemeCode}</div>
+        </div>
+      </div>`).join('');
+    dd._results = results;
+    dd.style.display = '';
+  }, 350);
+}
+
+function onMFKey(e) {
+  const dd = document.getElementById('mfDropdown');
+  if (!dd._results) return;
+  const items = dd.querySelectorAll('.dd-item');
+  let cur = [...items].findIndex(i => i.classList.contains('focused'));
+  if (e.key === 'ArrowDown') cur = Math.min(cur+1, items.length-1);
+  else if (e.key === 'ArrowUp') cur = Math.max(cur-1, 0);
+  else if (e.key === 'Enter' && cur >= 0) { selectMF(cur); return; }
+  else return;
+  items.forEach(i => i.classList.remove('focused'));
+  items[cur]?.classList.add('focused');
+  e.preventDefault();
+}
+
+async function selectMF(idx) {
+  const dd = document.getElementById('mfDropdown');
+  const f  = dd._results?.[idx];
+  if (!f) return;
+  dd.style.display = 'none';
+  document.getElementById('mfSearchInput').value = f.schemeName;
+  document.getElementById('mfSpinner').style.display = '';
+
+  // Fetch latest NAV
+  let nav = null;
+  try {
+    const r = await fetch(`https://api.mfapi.in/mf/${f.schemeCode}/latest`, { signal: AbortSignal.timeout(6000) });
+    const d = await r.json();
+    nav = parseFloat(d?.data?.[0]?.nav);
+  } catch {}
+
+  document.getElementById('mfSpinner').style.display = 'none';
+
+  selectedMF = { name: f.schemeName, ticker: `MF:${f.schemeCode}`, nav };
+  document.getElementById('holdingName').value   = f.schemeName;
+  document.getElementById('holdingTicker').value = `MF:${f.schemeCode}`;
+  showMFCard(f.schemeName, `MF:${f.schemeCode}`, nav);
+  showQtyBlock();
+  if (nav) document.getElementById('holdingCurrent').value = nav.toFixed(4);
+}
+
+function showMFCard(name, ticker, nav) {
+  document.getElementById('mfcName').textContent = name;
+  document.getElementById('mfcMeta').textContent = ticker;
+  document.getElementById('mfcNav').textContent  = nav ? '₹' + nav.toFixed(4) : '—';
+  document.getElementById('mfCard').style.display = '';
+}
+
+// ── US STOCK ────────────────────────────────────────────────────────────
+let usDebounce = null;
+function onUSInput(val) {
+  clearTimeout(usDebounce);
+  if (val.length >= 1) {
+    usDebounce = setTimeout(fetchUSPrice, 800);
+  }
+}
+
+async function fetchUSPrice() {
+  const ticker = document.getElementById('usTickerInput').value.trim().toUpperCase();
+  if (!ticker) return;
+  document.getElementById('usSpinner').style.display = '';
+  document.getElementById('usCard').style.display    = 'none';
+
+  const price = await fetchPrice({ ticker, type: 'us' });
+
+  document.getElementById('usSpinner').style.display = 'none';
+  if (price !== null) {
+    const usdRate = parseFloat(document.getElementById('usdRate')?.value) || settings.usdRate || 84.5;
+    selectedUS = { name: ticker, ticker, priceUSD: price };
+    document.getElementById('holdingName').value   = ticker;
+    document.getElementById('holdingTicker').value = ticker;
+    document.getElementById('uscName').textContent  = ticker;
+    document.getElementById('uscMeta').textContent  = 'NYSE / NASDAQ';
+    document.getElementById('uscPrice').textContent = '$' + price.toFixed(2) + ' · ₹' + (price * usdRate).toLocaleString('en-IN',{maximumFractionDigits:0});
+    document.getElementById('usCard').style.display = '';
+    document.getElementById('holdingCurrent').value = price.toFixed(2);
+    showQtyBlock();
+  } else {
+    showToast('Could not fetch price. Check ticker symbol.', 'error');
+  }
+}
+
+// ── SHOW QTY BLOCK ──────────────────────────────────────────────────────
+function showQtyBlock() {
+  document.getElementById('qtyBlock').style.display = '';
+  setTimeout(() => document.getElementById('holdingQty').focus(), 100);
+}
+
+// ── SAVE / DELETE ───────────────────────────────────────────────────────
 function saveHolding() {
   const type   = document.getElementById('assetType').value;
-  const name   = document.getElementById('holdingName').value.trim();
-  const ticker = document.getElementById('holdingTicker').value.trim().toUpperCase();
+  const name   = document.getElementById('holdingName').value.trim()
+              || selectedStock?.name || selectedMF?.name || selectedUS?.name || '';
+  const ticker = document.getElementById('holdingTicker').value.trim();
   const qty    = parseFloat(document.getElementById('holdingQty').value) || 0;
   const buy    = parseFloat(document.getElementById('holdingBuy').value) || 0;
-  const current= parseFloat(document.getElementById('holdingCurrent').value) || 0;
+  const current= parseFloat(document.getElementById('holdingCurrent').value) || buy;
   const note   = document.getElementById('holdingNote').value.trim();
 
-  if (!name || qty <= 0 || buy <= 0) {
-    alert('Please fill in name, quantity and buy price.'); return;
-  }
+  if (!name) { showToast('Please select a stock or fund first.', 'error'); return; }
+  if (qty <= 0 || buy <= 0) { showToast('Please enter quantity and buy price.', 'error'); return; }
 
   const h = {
-    id: editId || id(), type, name, ticker, qty, buy,
-    current: current || buy, note,
-    addedAt: new Date().toISOString()
+    id: editId || id(), type, name, ticker, qty, buy, current, note,
+    addedAt: editId ? (holdings.find(x=>x.id===editId)?.addedAt || new Date().toISOString()) : new Date().toISOString()
   };
-
-  if (type === 'fd') {
-    h.fdRate    = parseFloat(document.getElementById('fdRate').value) || 0;
-    h.fdMaturity= document.getElementById('fdMaturity').value;
-    h.fdSubtype = document.getElementById('fdSubtype').value;
-    h.current   = buy; // principal
-    delete h.ticker;
-  }
 
   if (editId) {
     const idx = holdings.findIndex(x => x.id === editId);
     if (idx !== -1) holdings[idx] = h;
-  } else {
-    holdings.push(h);
-  }
+  } else holdings.push(h);
 
   save(); closeModal(); renderAll();
+  showToast(`${editId ? 'Updated' : 'Added'} ${name.split(' ')[0]}`, 'success');
+}
+
+function saveFD() {
+  const name    = document.getElementById('fdName').value.trim();
+  const principal = parseFloat(document.getElementById('holdingQty2').value) || 0;
+  const rate    = parseFloat(document.getElementById('fdRate').value) || 0;
+  const maturity= document.getElementById('fdMaturity').value;
+  const subtype = document.getElementById('fdSubtype').value;
+  const note    = document.getElementById('fdNote').value.trim();
+
+  if (!name || principal <= 0) { showToast('Enter institution name and principal amount.', 'error'); return; }
+
+  const h = {
+    id: editId || id(), type: 'fd', name,
+    qty: 1, buy: principal, current: principal,
+    fdRate: rate, fdMaturity: maturity, fdSubtype: subtype, note,
+    addedAt: editId ? (holdings.find(x=>x.id===editId)?.addedAt || new Date().toISOString()) : new Date().toISOString()
+  };
+
+  if (editId) {
+    const idx = holdings.findIndex(x => x.id === editId);
+    if (idx !== -1) holdings[idx] = h;
+  } else holdings.push(h);
+
+  save(); closeModal(); renderAll();
+  showToast(`${editId ? 'Updated' : 'Added'} ${name}`, 'success');
 }
 
 function deleteHolding() {
